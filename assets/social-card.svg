@@ -37,7 +37,10 @@
     Claude <tspan fill="#64748b">+</tspan> <tspan fill="#164e63">Codex</tspan>
   </text>
   <text x="76" y="181" class="label" font-size="34" font-weight="700" fill="#334155">Two-LLM Workflow</text>
-  <text x="76" y="229" class="label" font-size="23" font-weight="500" fill="#475569">Two LLMs cross-check; you only step in for the calls that matter.</text>
+  <text x="76" y="225" class="label" font-size="22" font-weight="500" fill="#475569">
+    <tspan x="76" dy="0">Two LLMs cross-check;</tspan>
+    <tspan x="76" dy="28">you only step in for the calls that matter.</tspan>
+  </text>
 
   <g filter="url(#softShadow)">
     <rect x="718" y="54" width="486" height="266" rx="24" fill="#ffffff" stroke="#e2e8f0"/>
