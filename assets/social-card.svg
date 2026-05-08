@@ -94,7 +94,7 @@
     <rect x="478" y="476" width="98" height="34" rx="17" fill="#fff7ed" stroke="#f97316" stroke-width="2"/>
     <text x="527" y="499" text-anchor="middle" class="label" font-size="13" font-weight="850" fill="#9a3412">REJECT</text>
 
-    <text x="88" y="533" class="label" font-size="18" font-weight="650" fill="#64748b">dev / fix / known-target</text>
+    <text x="88" y="548" class="label" font-size="18" font-weight="650" fill="#64748b">dev / fix / known-target</text>
   </g>
 
   <g filter="url(#softShadow)">
@@ -116,7 +116,7 @@
     <rect x="1064" y="451" width="120" height="50" rx="25" fill="#f0fdf4" stroke="#16a34a" stroke-width="2.5"/>
     <text x="1124" y="482" text-anchor="middle" class="label" font-size="17" font-weight="850" fill="#166534">consensus</text>
 
-    <text x="704" y="533" class="label" font-size="18" font-weight="650" fill="#64748b">audit / design / brainstorm</text>
+    <text x="704" y="548" class="label" font-size="18" font-weight="650" fill="#64748b">audit / design / brainstorm</text>
   </g>
 
   <text x="1206" y="610" text-anchor="end" class="label" font-size="16" font-weight="600" fill="#64748b">github.com/zhsongqing/claude-codex-workflow</text>
