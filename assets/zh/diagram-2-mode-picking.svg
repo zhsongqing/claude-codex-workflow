@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="340" viewBox="0 0 720 340" role="img" aria-labelledby="pick-zh-title pick-zh-desc">
+  <title id="pick-zh-title">模式选择决策树</title>
+  <desc id="pick-zh-desc">一个现代决策树：用户触发词会分流到线性模式、并行模式，或默认线性模式。</desc>
+  <defs>
+    <filter id="pick-zh-soft-shadow" x="-18%" y="-25%" width="136%" height="160%">
+      <feDropShadow dx="0" dy="8" stdDeviation="8" flood-color="#0f172a" flood-opacity="0.10"/>
+    </filter>
+    <marker id="pick-zh-arrow" markerWidth="6" markerHeight="6" refX="5.4" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L6,3 L0,6 Z" fill="#94a3b8"/>
+    </marker>
+  </defs>
+  <style>
+    .label { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+  </style>
+  <rect x="1" y="1" width="718" height="338" rx="24" fill="#ffffff" stroke="#e2e8f0"/>
+
+  <path d="M360 80 C320 120 195 148 146 220" fill="none" stroke="#cbd5e1" stroke-width="2.2" stroke-linecap="round" marker-end="url(#pick-zh-arrow)"/>
+  <path d="M360 80 C360 124 360 166 360 220" fill="none" stroke="#cbd5e1" stroke-width="2.2" stroke-linecap="round" marker-end="url(#pick-zh-arrow)"/>
+  <path d="M360 80 C400 120 525 148 574 220" fill="none" stroke="#cbd5e1" stroke-width="2.2" stroke-linecap="round" marker-end="url(#pick-zh-arrow)"/>
+
+  <g filter="url(#pick-zh-soft-shadow)">
+    <rect x="283" y="32" width="154" height="48" rx="24" fill="#fff7ed" stroke="#f97316" stroke-width="2"/>
+    <text x="360" y="62" text-anchor="middle" class="label" font-size="15" font-weight="800" fill="#9a3412">用户说...</text>
+  </g>
+
+  <rect x="69" y="141" width="154" height="25" rx="12.5" fill="#ffffff" stroke="#e2e8f0"/>
+  <text x="146" y="158" text-anchor="middle" class="label" font-size="10.5" font-weight="500" fill="#64748b">修 / 实施 / 重构</text>
+
+  <rect x="281" y="145" width="158" height="25" rx="12.5" fill="#ffffff" stroke="#e2e8f0"/>
+  <text x="360" y="162" text-anchor="middle" class="label" font-size="10.5" font-weight="500" fill="#64748b">分析 / 设计 / 评审 / OK 吗?</text>
+
+  <rect x="526" y="141" width="96" height="25" rx="12.5" fill="#ffffff" stroke="#e2e8f0"/>
+  <text x="574" y="158" text-anchor="middle" class="label" font-size="10.5" font-weight="500" fill="#64748b">模糊</text>
+
+  <g filter="url(#pick-zh-soft-shadow)">
+    <rect x="46" y="220" width="200" height="92" rx="18" fill="#ecfdf5" stroke="#16a34a" stroke-width="2"/>
+    <text x="70" y="289" class="label" font-size="48" font-weight="800" fill="#16a34a" opacity="0.12">1</text>
+    <text x="146" y="256" text-anchor="middle" class="label" font-size="16" font-weight="800" fill="#166534">模式 1：线性</text>
+    <text x="146" y="281" text-anchor="middle" class="label" font-size="12" font-weight="500" fill="#64748b">开发 · 修复 · 实施 · 重构</text>
+  </g>
+
+  <g filter="url(#pick-zh-soft-shadow)">
+    <rect x="260" y="220" width="200" height="92" rx="18" fill="#ecfdf5" stroke="#16a34a" stroke-width="2"/>
+    <text x="284" y="289" class="label" font-size="48" font-weight="800" fill="#16a34a" opacity="0.12">2</text>
+    <text x="360" y="256" text-anchor="middle" class="label" font-size="16" font-weight="800" fill="#166534">模式 2：并行</text>
+    <text x="360" y="281" text-anchor="middle" class="label" font-size="12" font-weight="500" fill="#64748b">评审 · 设计 · 头脑风暴</text>
+  </g>
+
+  <g filter="url(#pick-zh-soft-shadow)">
+    <rect x="474" y="220" width="200" height="92" rx="18" fill="#f8fafc" stroke="#94a3b8" stroke-width="2"/>
+    <text x="498" y="289" class="label" font-size="48" font-weight="800" fill="#94a3b8" opacity="0.14">1</text>
+    <text x="574" y="256" text-anchor="middle" class="label" font-size="16" font-weight="800" fill="#334155">模式 1 默认</text>
+    <text x="574" y="281" text-anchor="middle" class="label" font-size="12" font-weight="500" fill="#64748b">Claude 声明 · Owner 可改</text>
+  </g>
+</svg>

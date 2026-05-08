@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="320" viewBox="0 0 720 320" role="img" aria-labelledby="actor-zh-title actor-zh-desc">
+  <title id="actor-zh-title">角色模型</title>
+  <desc id="actor-zh-desc">Owner 向 Claude 提供任务范围，Claude 与 Codex 协作评审，仅在需要时升级回 Owner。</desc>
+  <defs>
+    <filter id="actor-zh-soft-shadow" x="-20%" y="-30%" width="140%" height="170%">
+      <feDropShadow dx="0" dy="8" stdDeviation="8" flood-color="#0f172a" flood-opacity="0.10"/>
+    </filter>
+    <marker id="actor-zh-arrow" markerWidth="6" markerHeight="6" refX="5.4" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L6,3 L0,6 Z" fill="#94a3b8"/>
+    </marker>
+  </defs>
+  <style>
+    .label { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+  </style>
+  <rect x="1" y="1" width="718" height="318" rx="24" fill="#ffffff" stroke="#e2e8f0"/>
+
+  <path d="M318 106 C268 125 224 160 195 206" fill="none" stroke="#cbd5e1" stroke-width="2.2" stroke-linecap="round" marker-end="url(#actor-zh-arrow)"/>
+  <path d="M148 206 C178 153 228 119 292 102" fill="none" stroke="#cbd5e1" stroke-width="2.2" stroke-linecap="round" marker-end="url(#actor-zh-arrow)"/>
+  <path d="M315 236 C344 222 376 222 405 236" fill="none" stroke="#cbd5e1" stroke-width="2.2" stroke-linecap="round" marker-end="url(#actor-zh-arrow)"/>
+  <path d="M405 258 C376 274 344 274 315 258" fill="none" stroke="#cbd5e1" stroke-width="2.2" stroke-linecap="round" marker-end="url(#actor-zh-arrow)"/>
+
+  <text x="252" y="153" text-anchor="middle" class="label" font-size="11" font-weight="500" fill="#64748b">任务 + 范围</text>
+  <text x="169" y="162" text-anchor="middle" class="label" font-size="11" font-weight="500" fill="#64748b">状态 · 仅升级时</text>
+  <text x="360" y="219" text-anchor="middle" class="label" font-size="11" font-weight="500" fill="#64748b">请求评审</text>
+  <text x="360" y="296" text-anchor="middle" class="label" font-size="11" font-weight="500" fill="#64748b">评审结果 · APPROVE / REJECT</text>
+
+  <g filter="url(#actor-zh-soft-shadow)">
+    <rect x="250" y="30" width="220" height="76" rx="38" fill="#f8fafc" stroke="#94a3b8" stroke-width="2"/>
+    <text x="360" y="62" text-anchor="middle" class="label" font-size="20" font-weight="800" fill="#334155">Owner</text>
+    <text x="360" y="85" text-anchor="middle" class="label" font-size="12" font-weight="500" fill="#64748b">范围 · 最终决定 · 升级把关</text>
+  </g>
+
+  <g filter="url(#actor-zh-soft-shadow)">
+    <rect x="70" y="206" width="245" height="76" rx="38" fill="#eef2ff" stroke="#4f46e5" stroke-width="2"/>
+    <text x="192.5" y="238" text-anchor="middle" class="label" font-size="20" font-weight="800" fill="#4f46e5">Claude</text>
+    <text x="192.5" y="261" text-anchor="middle" class="label" font-size="12" font-weight="500" fill="#64748b">主对话 · 写代码 · 提 PR</text>
+  </g>
+
+  <g filter="url(#actor-zh-soft-shadow)">
+    <rect x="405" y="206" width="245" height="76" rx="38" fill="#ecfeff" stroke="#0891b2" stroke-width="2"/>
+    <text x="527.5" y="238" text-anchor="middle" class="label" font-size="20" font-weight="800" fill="#0891b2">Codex</text>
+    <text x="527.5" y="261" text-anchor="middle" class="label" font-size="12" font-weight="500" fill="#64748b">第二意见 · 合并把关</text>
+  </g>
+</svg>

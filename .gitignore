@@ -1,0 +1,20 @@
+# macOS
+.DS_Store
+
+# editors
+.vscode/
+.idea/
+*.swp
+
+# OS / shell history
+.bash_history
+.zsh_history
+
+# Claude Code
+.claude/
+CLAUDE.md.local
+
+# build / temp
+*.log
+*.tmp
+node_modules/

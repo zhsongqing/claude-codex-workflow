@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="180" viewBox="0 0 720 180" role="img" aria-labelledby="cc-title cc-desc">
+  <title id="cc-title">Claude + Codex Two-LLM Workflow</title>
+  <desc id="cc-desc">A clean protocol logo showing Owner oversight above two interlocking Claude and Codex nodes with bidirectional review flow.</desc>
+  <style>
+    .label { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+  </style>
+  <rect x="1" y="1" width="718" height="178" rx="24" fill="#ffffff" stroke="#e2e8f0"/>
+  <path d="M162 61 L137 76 L137 106 L162 121 L187 106 L187 76 Z" fill="#eef2ff" stroke="#4f46e5" stroke-width="3"/>
+  <path d="M222 61 L197 76 L197 106 L222 121 L247 106 L247 76 Z" fill="#ecfeff" stroke="#0891b2" stroke-width="3"/>
+  <path d="M187 76 C202 66 212 66 197 76 M187 106 C202 116 212 116 197 106" fill="none" stroke="#f97316" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="192" cy="38" r="18" fill="#f8fafc" stroke="#94a3b8" stroke-width="2"/>
+  <path d="M180 53 C166 62 160 67 155 77 M204 53 C218 62 224 67 229 77" fill="none" stroke="#94a3b8" stroke-width="2" stroke-linecap="round"/>
+  <text x="192" y="44" text-anchor="middle" class="label" font-size="17" font-weight="700" fill="#334155">O</text>
+  <text x="162" y="100" text-anchor="middle" class="label" font-size="36" font-weight="800" fill="#4f46e5">C</text>
+  <text x="222" y="100" text-anchor="middle" class="label" font-size="36" font-weight="800" fill="#0891b2">C</text>
+  <text x="192" y="147" text-anchor="middle" class="label" font-size="14" font-weight="600" fill="#475569">Owner gate</text>
+  <path d="M305 90 H351" fill="none" stroke="#cbd5e1" stroke-width="2" stroke-linecap="round"/>
+  <path d="M341 82 L351 90 L341 98" fill="none" stroke="#cbd5e1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="382" y="83" class="label" font-size="34" font-weight="800" fill="#111827">Claude + Codex</text>
+  <text x="384" y="114" class="label" font-size="18" font-weight="600" fill="#475569">Two-LLM Workflow</text>
+  <rect x="384" y="132" width="92" height="8" rx="4" fill="#4f46e5" opacity="0.18"/>
+  <rect x="486" y="132" width="92" height="8" rx="4" fill="#0891b2" opacity="0.18"/>
+  <rect x="588" y="132" width="36" height="8" rx="4" fill="#f97316" opacity="0.22"/>
+</svg>

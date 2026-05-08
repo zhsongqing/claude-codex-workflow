@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="320" viewBox="0 0 720 320" role="img" aria-labelledby="actor-title actor-desc">
+  <title id="actor-title">Actor Model</title>
+  <desc id="actor-desc">Owner provides task scope to Claude, Claude collaborates with Codex for review, and escalation returns to Owner only when needed.</desc>
+  <defs>
+    <filter id="actor-soft-shadow" x="-20%" y="-30%" width="140%" height="170%">
+      <feDropShadow dx="0" dy="8" stdDeviation="8" flood-color="#0f172a" flood-opacity="0.10"/>
+    </filter>
+    <marker id="actor-arrow" markerWidth="6" markerHeight="6" refX="5.4" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L6,3 L0,6 Z" fill="#94a3b8"/>
+    </marker>
+  </defs>
+  <style>
+    .label { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+  </style>
+  <rect x="1" y="1" width="718" height="318" rx="24" fill="#ffffff" stroke="#e2e8f0"/>
+
+  <path d="M318 106 C268 125 224 160 195 206" fill="none" stroke="#cbd5e1" stroke-width="2.2" stroke-linecap="round" marker-end="url(#actor-arrow)"/>
+  <path d="M148 206 C178 153 228 119 292 102" fill="none" stroke="#cbd5e1" stroke-width="2.2" stroke-linecap="round" marker-end="url(#actor-arrow)"/>
+  <path d="M315 236 C344 222 376 222 405 236" fill="none" stroke="#cbd5e1" stroke-width="2.2" stroke-linecap="round" marker-end="url(#actor-arrow)"/>
+  <path d="M405 258 C376 274 344 274 315 258" fill="none" stroke="#cbd5e1" stroke-width="2.2" stroke-linecap="round" marker-end="url(#actor-arrow)"/>
+
+  <text x="252" y="153" text-anchor="middle" class="label" font-size="11" font-weight="500" fill="#64748b">task + scope</text>
+  <text x="169" y="162" text-anchor="middle" class="label" font-size="11" font-weight="500" fill="#64748b">status · escalation only</text>
+  <text x="360" y="219" text-anchor="middle" class="label" font-size="11" font-weight="500" fill="#64748b">review request</text>
+  <text x="360" y="296" text-anchor="middle" class="label" font-size="11" font-weight="500" fill="#64748b">findings · APPROVE / REJECT</text>
+
+  <g filter="url(#actor-soft-shadow)">
+    <rect x="250" y="30" width="220" height="76" rx="38" fill="#f8fafc" stroke="#94a3b8" stroke-width="2"/>
+    <text x="360" y="62" text-anchor="middle" class="label" font-size="20" font-weight="800" fill="#334155">Owner</text>
+    <text x="360" y="85" text-anchor="middle" class="label" font-size="12" font-weight="500" fill="#64748b">scope · final call · escalation gate</text>
+  </g>
+
+  <g filter="url(#actor-soft-shadow)">
+    <rect x="70" y="206" width="245" height="76" rx="38" fill="#eef2ff" stroke="#4f46e5" stroke-width="2"/>
+    <text x="192.5" y="238" text-anchor="middle" class="label" font-size="20" font-weight="800" fill="#4f46e5">Claude</text>
+    <text x="192.5" y="261" text-anchor="middle" class="label" font-size="12" font-weight="500" fill="#64748b">main dialog · code · PR</text>
+  </g>
+
+  <g filter="url(#actor-soft-shadow)">
+    <rect x="405" y="206" width="245" height="76" rx="38" fill="#ecfeff" stroke="#0891b2" stroke-width="2"/>
+    <text x="527.5" y="238" text-anchor="middle" class="label" font-size="20" font-weight="800" fill="#0891b2">Codex</text>
+    <text x="527.5" y="261" text-anchor="middle" class="label" font-size="12" font-weight="500" fill="#64748b">second opinion · merge gate</text>
+  </g>
+</svg>
