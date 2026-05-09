@@ -107,7 +107,7 @@ Step 3  合并：保留双方共识 + 主动让步 + drop 双方都同意的误�
 | **C. Pipeline 重叠** | Codex 在 review PR A 的时候，主 Claude 实施 PR B；Codex 在 final-review PR A 的时候，主 Claude 处理 PR B 的 Phase 2 finding | Phase 2 / Phase 5 的 review 出 P0/BLOCK，需要立刻回头改 PR A — 这时不要继续 push PR B |
 
 **Agent worktree 注意：**
-- Agent 启动时 fetch origin/main + 显式从 `origin/main` 创分支：`git checkout -b <branch> origin/main`。Agent 写完后主 Claude 主动 rebase 一次（main 在 agent 工作期间通常已经动）。
+- Agent 启动时 `git fetch origin main` + 显式从 `origin/main` 创分支：`git checkout -b <branch> origin/main`。Agent 写完后主 Claude 主动 rebase 一次（main 在 agent 工作期间通常已经动）。
 - Agent prompt 里**不要让 agent 自己 push** — push / open PR / 跑 Codex 由主 Claude 集中做，避免两边都开 codex exec 撞 auth。
 - Agent 报告必须带：commit sha、worktree path、改动文件 + 行数、design 决策一句话、跑测试的结果。
 
@@ -173,8 +173,11 @@ Output: finding table (severity / file:line / issue / suggested fix)
 ### Phase 5 prompt 模板（final review / merge gate）
 
 ```
-Final review for the latest commit on this branch (or
-git diff main...HEAD if simpler).
+Final review for the full PR diff against origin/main.
+
+Run first (Claude prepares this before invoking codex):
+  git fetch origin main
+  git diff origin/main...HEAD > /tmp/diff.diff
 
 Project hygiene rules: <hygiene doc 路径>。
 
@@ -183,6 +186,8 @@ followed optionally by a separate line with one short reason.
 The first line is the binding gate — auto-merge parses it as
 `head -n 1 | grep -E '^(APPROVE|REJECT)$'`.
 ```
+
+Phase 5 review **整个 PR**，不是只 review 最新一个 commit — `git diff origin/main...HEAD` 覆盖从分叉点开始的所有 commit。只 review 最新 commit 会静默漏掉前面的 commit（多 commit PR 真踩过这个坑）。始终 `git fetch` 后用 `origin/main` 做 base，原因和 Phase 2 一样：本地 `main` 可能 stale，会把上游别的 merged PR 的 delta 算进 diff。
 
 Phase 5 比 Phase 2 还短 — 这一关就是 binding 决议，Codex 自己读 diff 自己判断。把 Phase 2 finding 列到 prompt 里反而会让它 anchor 在那批，漏掉 Phase 2 没抓的 cross-commit issue。
 

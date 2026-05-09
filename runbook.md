@@ -110,7 +110,7 @@ When one session needs to ship two or three independent PRs, three orthogonal pa
 | **C. Pipeline overlap** | While Codex reviews PR A in Phase 2, the primary Claude implements PR B. While Codex final-reviews PR A, the primary Claude addresses PR B's Phase 2 findings | Phase 2 / Phase 5 returns P0 / BLOCK on PR A and you must return to PR A immediately — pause work on PR B |
 
 **Agent worktree notes:**
-- The agent must `git fetch origin/main` and explicitly branch from `origin/main`: `git checkout -b <branch> origin/main`. Once the agent finishes, the primary Claude rebases once (main usually advanced during the agent's work).
+- The agent must `git fetch origin main` and explicitly branch from `origin/main`: `git checkout -b <branch> origin/main`. Once the agent finishes, the primary Claude rebases once (main usually advanced during the agent's work).
 - The agent prompt **must not let the agent push** — push / open PR / run Codex are centralized in the primary Claude to avoid two parallel `codex exec` calls colliding on auth.
 - The agent's report must include: commit sha, worktree path, files changed + line counts, one-sentence design choice, test results.
 
@@ -176,8 +176,11 @@ Only two things may be expanded:
 ### Phase 5 prompt template (final review / merge gate)
 
 ```
-Final review for the latest commit on this branch (or
-git diff main...HEAD if simpler).
+Final review for the full PR diff against origin/main.
+
+Run first (Claude prepares this before invoking codex):
+  git fetch origin main
+  git diff origin/main...HEAD > /tmp/diff.diff
 
 Project hygiene rules: <hygiene doc path>.
 
@@ -186,6 +189,8 @@ followed optionally by a separate line with one short reason.
 The first line is the binding gate — auto-merge parses it as
 `head -n 1 | grep -E '^(APPROVE|REJECT)$'`.
 ```
+
+Phase 5 reviews the **whole PR**, not just the latest commit — `git diff origin/main...HEAD` covers every commit on the branch since fork from main. Reviewing only the latest commit silently ignores earlier commits in the PR (a real foot-gun on multi-commit PRs). Always pin against `origin/main` after `git fetch` for the same reason as Phase 2 — local `main` may be stale and would inflate the diff with unrelated upstream merges.
 
 Phase 5 is even shorter than Phase 2 — this stage is the binding decision; Codex reads the diff and decides on its own. Listing Phase 2 findings in the Phase 5 prompt only anchors it on those and lets it miss cross-commit issues that Phase 2 didn't see.
 
