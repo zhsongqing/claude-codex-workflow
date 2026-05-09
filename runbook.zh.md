@@ -46,7 +46,8 @@ Phase 2  Codex pre-PR review (codex exec + git diff against base branch)
 Phase 3  Claude 处理 finding（accept / reject / defer），按需改代码
          → 提 draft PR，PR body 含 finding accept/reject 表
 Phase 4  Claude push + 等 CI 绿 (gh run watch <id> --exit-status)
-Phase 5  Codex final review (codex exec, 单 token APPROVE/REJECT)
+Phase 5  Codex final review (codex exec, 单 token APPROVE/REJECT
+         独立成行 — 后面可跟 1 行 reason 但不参与 gating 解析)
          APPROVE → Claude 标 ready + squash-merge + delete-branch
                    CI 自动部署（如有 auto-deploy 流水线）
          REJECT  → 回 Phase 3，最多 3 轮，第 3 轮还 REJECT 升级 Owner
@@ -62,7 +63,7 @@ Phase 5  Codex final review (codex exec, 单 token APPROVE/REJECT)
   - 涉及金钱 / 资产移动的核心调用
   - 数据库 schema migration
   - CI / 部署脚本 / 回滚脚本
-- **Phase 2 vs Phase 5 prompt 必须不同**。Phase 2 抓 detail；Phase 5 看 PR coherence + regression + 项目 hygiene + 输出单 token verdict。重复就是浪费 token。
+- **Phase 2 vs Phase 5 prompt 必须不同**。Phase 2 抓 detail；Phase 5 看 PR coherence + regression + 项目 hygiene + 输出单 token verdict（独立成行可机读 — 后面那行 reason 仅给 human reader 看，不参与 auto-merge gating）。重复就是浪费 token。
 
 ---
 
@@ -95,13 +96,32 @@ Step 3  合并：保留双方共识 + 主动让步 + drop 双方都同意的误�
 
 ---
 
+## 并行多 PR pipeline（同 session 多任务加速）
+
+当一个 session 要推多个独立 PR 时，3 个并行手段叠加可以让总 wall time 接近"做最长那个"而不是"全部相加"。每个手段单独都安全，叠加用按下表决定。
+
+| 手段 | 怎么用 | 何时不用 |
+|---|---|---|
+| **A. Worktree-isolated agent 实施 PR B** | 主 Claude 在自己 worktree 写 PR A，同时 spawn 一个 sub-agent 用 `isolation: "worktree"` 写 PR B；agent 在自己的 git worktree 实施 + 跑测试 + commit（**只本地 commit，不 push**），把 branch 名报回主 Claude 由主 Claude 统一 push / 开 PR / 跑 Codex | PR A 和 PR B 改同一个文件 / 互相依赖 / 共享一段难拆的 helper |
+| **B. 并行 Codex Phase 2 / Phase 5** | 每个 `codex exec` 创建独立 session id，背景跑 2-3 个互不干扰；用不同 output 文件 (`/tmp/codex-finding-A.md` / `-B.md`) + 一个 Monitor 同时盯 | Codex CLI 已知 auth 在抖（连 smoke 都过不去）— 这种时候并行也不会更快 |
+| **C. Pipeline 重叠** | Codex 在 review PR A 的时候，主 Claude 实施 PR B；Codex 在 final-review PR A 的时候，主 Claude 处理 PR B 的 Phase 2 finding | Phase 2 / Phase 5 的 review 出 P0/BLOCK，需要立刻回头改 PR A — 这时不要继续 push PR B |
+
+**Agent worktree 注意：**
+- Agent 启动时 fetch origin/main + 显式从 `origin/main` 创分支：`git checkout -b <branch> origin/main`。Agent 写完后主 Claude 主动 rebase 一次（main 在 agent 工作期间通常已经动）。
+- Agent prompt 里**不要让 agent 自己 push** — push / open PR / 跑 Codex 由主 Claude 集中做，避免两边都开 codex exec 撞 auth。
+- Agent 报告必须带：commit sha、worktree path、改动文件 + 行数、design 决策一句话、跑测试的结果。
+
+**实战参考：** 一次 2-PR session（独立修复 + 独立测试），串行做估计 50 分钟，并行做 22 分钟落地两个 PR — 接近 2× 加速。Codex 抓出 5 条 finding 跨 2 PR，**100% 是自审 + agent 自审都漏的**（包括"两条 client 实现路径只修了一条"+"实测设计意图和实现脱钩"）。这两个 anti-pattern 在 单串行 + 单 self-review 的工作流里 100% 会上线。
+
+---
+
 ## Codex CLI 调用模板
 
 ```bash
 # Pre-PR review (Phase 2) / Final review (Phase 5)：
-git diff <base-branch>...HEAD > /tmp/diff.diff   # 写到文件，prompt 里 reference
+git diff <base-branch>...HEAD > /tmp/diff.diff
 cat > /tmp/codex-prompt.md <<'EOF'
-... self-contained prompt（含 file: paths + 项目 hygiene 规则引用 + 输出格式 spec）
+... 极简 prompt（见下方模板 — 不超过 10 行）
 EOF
 codex exec --output-last-message /tmp/codex-finding.md - < /tmp/codex-prompt.md \
   > /tmp/codex.log 2>&1 &     # background，等 task-notification
@@ -111,62 +131,95 @@ codex exec --output-last-message /tmp/codex-finding.md - < /tmp/codex-prompt.md 
 
 **坑**：`codex review --base <branch> "<prompt>"` 报 `--base 和 PROMPT 互斥`。**总是用 `codex exec`** + 显式 `git diff` 给它。
 
+**diff 必须用 origin/main，不是本地 main：** `git fetch origin main` 之后本地 `main` 还停在旧 commit，`git diff main...HEAD` 的 merge-base 算出来包含 base→origin/main 的 delta（也就是别人在你工作期间已经 merge 进 main 的别的 PR），整个 diff 被污染，Codex review 的内容里夹杂大量与你无关的代码。**必须 `git diff origin/main...HEAD`**（或先 `git rebase origin/main` 再 diff 本地）。这条吃过亏：一次 Phase 2 review 有 1/3 的发现是 Codex 在批别的已 merge PR — 浪费一轮 review。
+
+### Prompt minimalism（**最重要的一条**）
+
+第二个 LLM 的价值是**独立判断**。Prompt 里多写一句 "specific things to scrutinize" / "我已经检查了 hygiene #2" / "这里我选 setdefault 是因为…"，Codex 就只能确认你的 framing — 抓不到你自审漏掉的东西。
+
+实证：同一个状态持久化 PR 跑了两版 prompt：
+
+| Prompt | 行数 | 输出 |
+|---|---|---|
+| editorialized：context + self-summary + "review focus #1-7" + hygiene 自查清单 | ~150 | transport 中断；零 finding（即便没断也只会 confirm 我的 framing）|
+| **极简：diff 路径 + hygiene 文件指针 + 输出格式** | **~10** | **2 条真 P1**（一处校验集合漏定 + xdist test isolation regression） |
+
+两条都是我 7-item 自审没看到的。这就是独立判断的 ROI。所以 prompt 模板**只允许下面两种最小形态**，谁加 "review focus #N" 谁回去重写。
+
 ### Phase 2 prompt 模板（pre-PR review）
 
 ```
-Pre-PR review for the diff at /tmp/diff.diff.
+Pre-PR review for /tmp/diff.diff.
 
-Context: <task summary in 1-2 sentences>. Background: <list of relevant
-project docs / hygiene rules / files Codex should read>.
+Context: <这个 PR 闭环的 finding/audit 一句话>。Read the diff and the
+actual files it touches.
 
-Review focus (in order):
-1. Does the change actually solve the stated problem?
-2. <task-specific risk #1>
-3. <task-specific risk #2>
-...
+Scope/relevant files (paths only, no analysis):
+  <path/to/alternative_impl.py>
+  <path/to/related_module.py>
 
-Skip: stylistic / docstring / formatting / discussion of unrelated issues.
+Project hygiene rules: <hygiene doc 路径>。
 
-Output format (strict):
-### F1: <one-line title>
-- severity: P0 | P1 | P2
-- file: <path>:<L1-L2>
-- 触发条件: 1-2 lines
-- 后果: 1-2 lines
-- 建议修法: 1-2 lines
-
-End with one of: PASS | NEEDS_FIXES | BLOCK.
+Output: finding table (severity / file:line / issue / suggested fix)
++ single-line PASS / NEEDS_FIXES / BLOCK at the end.
 ```
+
+允许扩展的只有两处：
+- **Context** — 一句话告诉 Codex severity 基线（audit P0 修复 vs 小重构差很多）
+- **Scope/relevant files** — 仅 paths，不写解释，不写 "review focus"。用于挡住 "Codex 漏看了 alternative implementation / 工厂切换备选" 那个回归（§坑表 line "Codex 漏看一整个 module"）。**特别是同一接口有多个 client 实现（如 stdlib path + SDK path）的项目**，必须把所有 alternative impls 列进 Scope，否则 Codex 只 review 你 diff 里出现的那个。
+
+**不要写自己的分析、不要列 review focus、不要预先提自己已经检查了什么**。"Scope" 只能列文件名，列了一句话以上就走回头路。
 
 ### Phase 5 prompt 模板（final review / merge gate）
 
 ```
-Final review for merge gate. APPROVE triggers auto-merge to main.
+Final review for the latest commit on this branch (or
+git diff main...HEAD if simpler).
 
-Context: PR #<N> addresses <task>. Commits:
-1. <sha> — <one-line>
-2. <sha> — <one-line>
-...
-CI status: <all checks summary>.
+Project hygiene rules: <hygiene doc 路径>。
 
-Full diff at /tmp/diff.diff.
-
-Review focus (DIFFERENT from pre-PR — DO NOT repeat detail-level findings):
-1. Coherence: do all commits combine into a complete fix? Subtle inter-commit interactions?
-2. Regression risk for prod (specifically: <project's prod risk vectors>)
-3. Test coverage completeness (mock-passes-but-prod-fails?)
-4. Project hygiene rules sweep (reference: <path to hygiene doc>)
-5. Anything outright dangerous (state corruption / deadlock / secret leak)
-
-Skip: stylistic / docstring / already-addressed pre-PR findings / unrelated audits.
-
-Output format: same finding format as Phase 2, then a final line that is
-EXACTLY one of (no other text):
-- APPROVE
-- REJECT
-
-Treat APPROVE as binding. If any P0 doubt, REJECT.
+Output: a single line containing exactly one token (APPROVE or REJECT),
+followed optionally by a separate line with one short reason.
+The first line is the binding gate — auto-merge parses it as
+`head -n 1 | grep -E '^(APPROVE|REJECT)$'`.
 ```
+
+Phase 5 比 Phase 2 还短 — 这一关就是 binding 决议，Codex 自己读 diff 自己判断。把 Phase 2 finding 列到 prompt 里反而会让它 anchor 在那批，漏掉 Phase 2 没抓的 cross-commit issue。
+
+**为什么允许第二行 reason：** 实测 Codex 给 reason 对人审计很有用（典型输出 `APPROVE\nNo blocking regression found; focused tests pass`）。但 reason 不参与 auto-merge gating — 第一行必须是裸 token，否则脚本无法机读。**不要把 reason 和 token 写在同一行**（曾考虑过 "APPROVE: <reason>" 之类的格式，会让 grep 失败）。也允许 Codex 只输出 bare token 不带 reason — Phase 5 的最简形态正合规。
+
+---
+
+## Codex 进度诊断（看到 `Auth(TokenRefreshFailed)` 时的判断流程）
+
+`Auth(TokenRefreshFailed("Failed to parse server response"))` 这行经常出现在 stderr，但**多数时候 Codex 还在跑**。早 kill 会浪费一整轮 review。
+
+**在 kill 前先分两种 mode：**
+
+| | **Mode A — 还在做（常见）** | **Mode B — 真 hung** |
+|---|---|---|
+| stdout (`codex.log`) | 持续累加 `exec ... succeeded in Nms` 行 | 0 字节 / 完全静止 |
+| `~/.codex/sessions/<today>/` | 有当天新 jsonl，mtime 在更新 | 没有当天文件（session 没建起来）|
+| `ps -p <pid> -o stat,time` | CPU time 在累加 | `S` 状态 + `0:00.x` CPU 几分钟不动 |
+| 处理 | **什么都不做**，让 Monitor 的 `until [ -s file ]` 自己等 — 真 review 通常 2-5 分钟才出 verdict | `kill <pid>` → `codex logout && codex login` → 重跑或 surface Owner |
+
+**快速诊断 oneliner：**
+
+```bash
+# 还有 exec/succeeded 行 = 还在跑
+tail -20 /tmp/codex.log | grep -E "exec|succeeded"
+# 当天 session dir 有新文件 = 还在跑（注意：sessions 用本地日期分桶，
+# 不是 UTC — 用 -u 在 UTC/local 跨日时会看错目录误报为 hung）
+ls -lt ~/.codex/sessions/$(date +%Y/%m/%d)/ 2>/dev/null | head -3
+```
+
+**反模式（每条都吃过亏）：**
+- 看到 stderr 那行 `Auth(...)` 就声称 "Codex 不可用"，立刻走 self-review 兜底
+- 用 `Read` / `cat` poll `--output-last-message` 文件 — 那是终态文件，过程中是空的；只看 Monitor 事件
+- 用 `codex.log`（stdout 重定向）判断 verdict — verdict 写在 `--output-last-message`，不是 stdout
+- 在 PR body / commit message 里抢先写 "Codex unavailable" prose，结果 Monitor 后来真的 fire 了，PR body 还得回去改
+
+**经验：等 Monitor 比 kill 重跑便宜得多。** Phase 2 给 5 分钟、Phase 5 给 3 分钟的等待预算 — Monitor 的 `until` 谓词自己处理。
 
 ---
 
@@ -195,9 +248,15 @@ Phase 5 完成后：Claude `gh pr comment <pr>` 加一条 review 决议留痕（
 | `attempts["n"] == 0` 在 mock 测试 | side_effect callable 签名没匹配 mocked method 的 args | 总是 `def fn(*args, **kwargs):` |
 | `gh pr merge` 报 "main is used by worktree" | 本地 `git checkout main` 在 worktree env 失败 | 无影响 — `gh pr view --json state` 验证已 merge |
 | 后台 task notification 没等就主动 poll | 误用了 ScheduleWakeup / sleep loop | 启动 background task 后什么都别做，等 task-notification |
-| Codex 漏看一整个 module / alternative implementation | Codex 没自动扩 scope | Phase 2 prompt 显式列出**所有**相关文件，包括 alternative impls / 工厂切换的备选 |
+| Codex 漏看一整个 module / alternative implementation | Codex 没自动扩 scope | Phase 2 prompt 加 `Scope/relevant files: <paths only>` 块（paths-only — 不写分析、不列 review focus），把 alternative impls / 工厂切换备选用文件名列出来；详见 §"Phase 2 prompt 模板" |
 | Phase 5 重复 Phase 2 的 finding | 两个 phase prompt 没区分清楚 | Phase 2 抓 detail；Phase 5 抓 coherence + regression + hygiene + 单 token 决议 |
 | Codex 严重度判断和 Claude 不一致 | 两边 prior 不同 | Mode 2 challenge protocol 解决；Mode 1 中升级 Owner |
+| Codex 输出和我自己的分析高度一致，没抓到新问题 | Prompt 里把自己的 framing / "review focus" / 自审清单都喂他了，杀掉了独立判断 | Prompt 极简化（见 §"Prompt minimalism"）— 只给 diff 路径 + hygiene 指针 + 输出格式 |
+| `Auth(TokenRefreshFailed)` 出现就以为 Codex 死了 | 那行实际是 transport 层重连噪音，Codex 主流程多数还在跑 | 先看 stdout 是否还在累加 `exec ... succeeded` 行 + `~/.codex/sessions/<today>/` 是否有新 jsonl，再决定 kill；详见 §"Codex 进度诊断" |
+| Phase 5 verdict 一直没出 → 提前在 PR body 写 "Codex unavailable" → Monitor 后来 fire 真 verdict 出来了 → PR body 回炉 | 没等 `--output-last-message` 文件落地就改写 PR body / commit message | 在 Monitor 事件 fire 前不要写 "verdict 状态"语句到任何持久化产物（PR body / commit message / 代码注释）|
+| Codex Phase 2 finding 中 1/3 是别的已 merge PR 的代码 | `git diff main...HEAD` 用了 stale 本地 main，merge-base 算到旧 commit，把上游别的 merged PR 的 delta 算进来 | `git fetch origin main` 后用 `git diff origin/main...HEAD`；或先 `git rebase origin/main` 再 diff |
+| Sub-agent worktree 用 `git checkout -b <branch> main` 本地 main stale，工作期间 main 已经动；agent push 时 conflict 一片 | Agent 启动早，主 Claude 那边 main 后来 merged 别的 PR，agent 没 fetch | Agent prompt 显式要求 `git fetch origin main && git checkout -b <branch> origin/main`；agent 完事后主 Claude 主动 rebase + force-with-lease push |
+| 同一接口多套 client 实现（stdlib + SDK）只修了 diff 里看见的那条 | Phase 2 prompt 没在 Scope 列出所有实现路径，Codex review 的范围被 diff 局限 | Phase 2 Scope 块强制列出 `bfxapi_client.py / bitfinex_client.py` 这种 alternative impls；项目根记一份"接口 → 多实现路径"清单方便填 |
 
 ---
 
@@ -205,7 +264,7 @@ Phase 5 完成后：Claude `gh pr comment <pr>` 加一条 review 决议留痕（
 
 判定标准：**"另一个独立模型再看一眼" 能降低风险或减少 Owner 工作量** 就值得跑。代表性场景包括 — 单人 / 小团队 / 开源 maintainer 缺人二审；资金 / 合规 / 安全相关代码；大 refactor 或 DB migration；预发布 audit 或架构选型（Mode 2）；review 另一个 LLM 写的代码；以及本 protocol 自身的 README / runbook 改动（"docs-only" 豁免不适用）。
 
-完整应用场景列表 + 具体例子见 README：[zh](README.zh.md#适合的场景) / [en](README.md#where-this-fits)。
+完整应用场景列表 + 具体例子见 README：[zh](README.zh.md#适合的场景) / [en](README.md#where-this-fits).
 
 ---
 
@@ -216,7 +275,7 @@ Phase 5 完成后：Claude `gh pr comment <pr>` 加一条 review 决议留痕（
 - Owner 对改动有 100% 信心 + diff 很小 — workflow 有 token cost，不必杀鸡用牛刀
 - 文档 only 改动 — Phase 2/5 通常无价值
 
-**例外（必须走完整流程）**：本 protocol 自身的 README / runbook / 资产改动。它们是其他人采用这套工作流的入口，"文档 only" 豁免**不适用** — 一旦在这里出错，错误会扩散到所有 adopter。曾经有过一次例外被遗漏 — 把 protocol 自身的 README/runbook 当成普通 docs-only 跳过 Phase 2/5；事后由 Owner 抓出来补完整流程，这条规则就是从那次教训写进来的。
+**例外（必须走完整流程）**：本 protocol 自身的 README / runbook / 资产改动。它们是其他人采用这套工作流的入口，"文档 only" 豁免**不适用** — 一旦在这里出错，错误会扩散到所有 adopter。本 protocol 历史上有过一次 README 改动漏走 Phase 2/5，事后 Owner 抓出来补做的实例。
 
 ---
 

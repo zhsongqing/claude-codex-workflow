@@ -46,7 +46,9 @@ Phase 2  Codex pre-PR review (codex exec + git diff against base branch)
 Phase 3  Claude handles findings (accept / reject / defer), edits code as needed
          → opens draft PR; PR body includes finding accept/reject table
 Phase 4  Claude pushes + waits for CI green (gh run watch <id> --exit-status)
-Phase 5  Codex final review (codex exec, single-token APPROVE/REJECT)
+Phase 5  Codex final review (codex exec, single-token APPROVE/REJECT
+         on its own line — an optional one-line reason may follow but
+         is not parsed by the gating script)
          APPROVE → Claude marks ready + squash-merges + deletes branch
                    CI auto-deploys (if an auto-deploy pipeline exists)
          REJECT  → return to Phase 3, up to 3 rounds; a 3rd REJECT escalates to Owner
@@ -62,7 +64,7 @@ Phase 5  Codex final review (codex exec, single-token APPROVE/REJECT)
   - Core calls involving money / asset movement
   - Database schema migration
   - CI / deployment scripts / rollback scripts
-- **Phase 2 and Phase 5 prompts must be different**. Phase 2 catches details; Phase 5 checks PR coherence + regression + project hygiene + a single-token verdict. Repeating the same prompt wastes tokens.
+- **Phase 2 and Phase 5 prompts must be different**. Phase 2 catches details; Phase 5 checks PR coherence + regression + project hygiene + a single-token verdict (on its own line so it is machine-parseable; the optional one-line reason on the next line is for human readers and is not part of the auto-merge gate). Repeating the same prompt wastes tokens.
 
 ---
 
@@ -97,13 +99,32 @@ Do not switch in the opposite direction (Mode 1 → Mode 2 midstream). If code i
 
 ---
 
+## Parallel multi-PR pipeline (when one session ships multiple PRs)
+
+When one session needs to ship two or three independent PRs, three orthogonal parallelism techniques can be stacked so the total wall time is closer to "the longest one" than "the sum". Each technique is safe alone; combine them per the table below.
+
+| Technique | How | When NOT to use |
+|---|---|---|
+| **A. Worktree-isolated agent for PR B** | The primary Claude implements PR A in its own worktree; in parallel it spawns a sub-agent with `isolation: "worktree"` to implement PR B. The sub-agent works in its own git worktree (implements + runs tests + commits **locally only — does not push**) and reports its branch name back. The primary Claude pushes / opens PRs / runs Codex centrally | PR A and PR B touch the same file, depend on each other, or share a hard-to-split helper |
+| **B. Concurrent Codex Phase 2 / Phase 5** | Each `codex exec` creates its own session id; running 2-3 in the background concurrently is safe. Use distinct output files (`/tmp/codex-finding-A.md` / `-B.md`) and a single Monitor watching for both | Codex CLI auth is already flaky (even smoke tests fail) — concurrency does not help if the CLI is broken |
+| **C. Pipeline overlap** | While Codex reviews PR A in Phase 2, the primary Claude implements PR B. While Codex final-reviews PR A, the primary Claude addresses PR B's Phase 2 findings | Phase 2 / Phase 5 returns P0 / BLOCK on PR A and you must return to PR A immediately — pause work on PR B |
+
+**Agent worktree notes:**
+- The agent must `git fetch origin/main` and explicitly branch from `origin/main`: `git checkout -b <branch> origin/main`. Once the agent finishes, the primary Claude rebases once (main usually advanced during the agent's work).
+- The agent prompt **must not let the agent push** — push / open PR / run Codex are centralized in the primary Claude to avoid two parallel `codex exec` calls colliding on auth.
+- The agent's report must include: commit sha, worktree path, files changed + line counts, one-sentence design choice, test results.
+
+**Empirical reference:** A 2-PR session (independent fixes + independent tests) that would have taken ~50 min serial took 22 min parallel — close to a 2× speedup. Codex caught 5 findings across the 2 PRs, **100% of them issues self-review and the agent's self-review missed** (including "two client implementation paths but only one was fixed" and "design intent and implementation drifted apart"). Both anti-patterns would have shipped in a single-serial + single-self-review workflow.
+
+---
+
 ## Codex CLI invocation templates
 
 ```bash
 # Pre-PR review (Phase 2) / Final review (Phase 5):
-git diff <base-branch>...HEAD > /tmp/diff.diff   # write to a file; reference it in the prompt
+git diff <base-branch>...HEAD > /tmp/diff.diff
 cat > /tmp/codex-prompt.md <<'EOF'
-... self-contained prompt (including file: paths + project hygiene rule references + output format spec)
+... minimal prompt (see template below — under 10 lines)
 EOF
 codex exec --output-last-message /tmp/codex-finding.md - < /tmp/codex-prompt.md \
   > /tmp/codex.log 2>&1 &     # background; wait for task-notification
@@ -113,62 +134,97 @@ codex exec --output-last-message /tmp/codex-finding.md - < /tmp/codex-prompt.md 
 
 **Pitfall**: `codex review --base <branch> "<prompt>"` errors because `--base and PROMPT are mutually exclusive`. **Always use `codex exec`** + an explicit `git diff`.
 
+**Diff must use `origin/main`, not local `main`:** After `git fetch origin main`, your local `main` still points at an old commit. `git diff main...HEAD` then computes the merge-base from that stale local main, so the diff includes everything between local main and origin/main (i.e. other PRs that were merged into main while you were working) on top of your actual changes. Codex then reviews a polluted diff with code that is not yours. **Always use `git diff origin/main...HEAD`** (or `git rebase origin/main` first and then diff locally). This has bitten us: one Phase 2 review had ~1/3 of its findings about other already-merged PRs — a wasted round.
+
+### Prompt minimalism (**the most important rule**)
+
+The value of the second LLM is **independent judgment**. Every extra line in the prompt — "specific things to scrutinize", "I have already checked hygiene #2", "I chose setdefault here because..." — pushes Codex toward confirming your framing instead of catching what your self-review missed.
+
+Empirical: the same state-persistence PR was sent with two prompts:
+
+| Prompt | Lines | Output |
+|---|---|---|
+| editorialized: context + self-summary + "review focus #1-7" + hygiene checklist | ~150 | transport interruption; zero findings (and even with a clean run it would only have confirmed the framing) |
+| **minimal: diff path + hygiene doc pointer + output format** | **~10** | **2 real P1s** (one missed validation set + xdist test isolation regression) |
+
+Both were issues my 7-item self-review missed. That is the ROI of independent judgment. The prompt templates below are the **only forms allowed** — anyone adding a "review focus #N" goes back and rewrites it.
+
 ### Phase 2 prompt template (pre-PR review)
 
 ```
-Pre-PR review for the diff at /tmp/diff.diff.
+Pre-PR review for /tmp/diff.diff.
 
-Context: <task summary in 1-2 sentences>. Background: <list of relevant
-project docs / hygiene rules / files Codex should read>.
+Context: <one sentence on the finding/audit this PR closes>. Read the diff and the
+actual files it touches.
 
-Review focus (in order):
-1. Does the change actually solve the stated problem?
-2. <task-specific risk #1>
-3. <task-specific risk #2>
-...
+Scope/relevant files (paths only, no analysis):
+  <path/to/alternative_impl.py>
+  <path/to/related_module.py>
 
-Skip: stylistic / docstring / formatting / discussion of unrelated issues.
+Project hygiene rules: <hygiene doc path>.
 
-Output format (strict):
-### F1: <one-line title>
-- severity: P0 | P1 | P2
-- file: <path>:<L1-L2>
-- trigger condition: 1-2 lines
-- impact: 1-2 lines
-- suggested fix: 1-2 lines
-
-End with one of: PASS | NEEDS_FIXES | BLOCK.
+Output: finding table (severity / file:line / issue / suggested fix)
++ single-line PASS / NEEDS_FIXES / BLOCK at the end.
 ```
+
+Only two things may be expanded:
+- **Context** — one sentence to give Codex the severity baseline (a P0 audit fix vs. a small refactor differ a lot).
+- **Scope/relevant files** — paths only. No commentary, no "review focus". This blocks the "Codex missed an alternative implementation / factory-switch candidate" regression (see the pitfall table). **In particular, when one interface has multiple client implementations (e.g. a stdlib path and an SDK path)** every alternative implementation must be listed in Scope, otherwise Codex only reviews whichever path appears in your diff.
+
+**Do not write your own analysis, do not list a "review focus", and do not pre-mention what you have already checked**. "Scope" must be file paths only — anything more than a single line and you are sliding back to editorial mode.
 
 ### Phase 5 prompt template (final review / merge gate)
 
 ```
-Final review for merge gate. APPROVE triggers auto-merge to main.
+Final review for the latest commit on this branch (or
+git diff main...HEAD if simpler).
 
-Context: PR #<N> addresses <task>. Commits:
-1. <sha> — <one-line>
-2. <sha> — <one-line>
-...
-CI status: <all checks summary>.
+Project hygiene rules: <hygiene doc path>.
 
-Full diff at /tmp/diff.diff.
-
-Review focus (DIFFERENT from pre-PR — DO NOT repeat detail-level findings):
-1. Coherence: do all commits combine into a complete fix? Subtle inter-commit interactions?
-2. Regression risk for prod (specifically: <project's prod risk vectors>)
-3. Test coverage completeness (mock-passes-but-prod-fails?)
-4. Project hygiene rules sweep (reference: <path to hygiene doc>)
-5. Anything outright dangerous (state corruption / deadlock / secret leak)
-
-Skip: stylistic / docstring / already-addressed pre-PR findings / unrelated audits.
-
-Output format: same finding format as Phase 2, then a final line that is
-EXACTLY one of (no other text):
-- APPROVE
-- REJECT
-
-Treat APPROVE as binding. If any P0 doubt, REJECT.
+Output: a single line containing exactly one token (APPROVE or REJECT),
+followed optionally by a separate line with one short reason.
+The first line is the binding gate — auto-merge parses it as
+`head -n 1 | grep -E '^(APPROVE|REJECT)$'`.
 ```
+
+Phase 5 is even shorter than Phase 2 — this stage is the binding decision; Codex reads the diff and decides on its own. Listing Phase 2 findings in the Phase 5 prompt only anchors it on those and lets it miss cross-commit issues that Phase 2 didn't see.
+
+**Why a second-line reason is allowed:** Codex's reason is empirically useful for human auditing (a typical output is `APPROVE\nNo blocking regression found; focused tests pass`). But the reason is not part of the auto-merge gate — the first line must be a bare token, otherwise the parsing script fails. **Do not put the reason and the token on the same line** (a format like `APPROVE: <reason>` would break grep). Codex emitting just the bare token without a reason is also fine — that is the simplest valid Phase 5 form.
+
+---
+
+## Codex progress diagnosis (what to do when you see `Auth(TokenRefreshFailed)`)
+
+`Auth(TokenRefreshFailed("Failed to parse server response"))` shows up in stderr quite often, but **most of the time Codex is still running**. Killing too early wastes a whole review round.
+
+**Before killing, classify the failure mode:**
+
+| | **Mode A — still working (common)** | **Mode B — actually hung** |
+|---|---|---|
+| stdout (`codex.log`) | Continues to accrue `exec ... succeeded in Nms` lines | 0 bytes / completely static |
+| `~/.codex/sessions/<today>/` | Has a session jsonl from today, mtime is updating | No file from today (the session never started) |
+| `ps -p <pid> -o stat,time` | CPU time is accumulating | `S` state + `0:00.x` CPU for several minutes |
+| Action | **Do nothing.** Let the Monitor's `until [ -s file ]` loop finish — a real review takes ~2-5 minutes after the first `Auth` warning before the verdict file appears | `kill <pid>` → `codex logout && codex login` → retry or surface to Owner |
+
+**Quick diagnosis one-liner:**
+
+```bash
+# stdout has new exec/succeeded lines = still running
+tail -20 /tmp/codex.log | grep -E "exec|succeeded"
+# session dir has a today-stamped file = still running
+# (sessions are bucketed by LOCAL date, not UTC — using -u
+#  around the local/UTC day boundary points at the wrong dir
+#  and falsely reports the session as hung)
+ls -lt ~/.codex/sessions/$(date +%Y/%m/%d)/ 2>/dev/null | head -3
+```
+
+**Anti-patterns (each one a real lesson):**
+- Seeing the stderr `Auth(...)` line and concluding "Codex is unavailable", then immediately falling back to self-review.
+- Polling `--output-last-message` with `Read` / `cat` — that file is the terminal artifact and is empty during the run; only watch the Monitor event.
+- Reading `codex.log` (the stdout redirect) for the verdict — the verdict goes to `--output-last-message`, not stdout.
+- Pre-writing "Codex unavailable" prose into the PR body or commit message — if the Monitor later fires with the real verdict, the PR body has to be rewritten.
+
+**Lesson: waiting for the Monitor is much cheaper than killing and re-running.** Budget Phase 2 for 5 minutes and Phase 5 for 3 minutes — the Monitor's `until` predicate handles it.
 
 ---
 
@@ -197,9 +253,15 @@ Keep locally (for the session):
 | `attempts["n"] == 0` in a mock test | The side_effect callable signature did not match the mocked method's args | Always use `def fn(*args, **kwargs):` |
 | `gh pr merge` says "main is used by worktree" | Local `git checkout main` failed in a worktree environment | No impact — verify merge state with `gh pr view --json state` |
 | Started polling without waiting for the background task notification | Misused ScheduleWakeup / sleep loop | After starting the background task, do nothing; wait for task-notification |
-| Codex missed an entire module / alternative implementation | Codex did not expand scope automatically | Phase 2 prompt must explicitly list **all** relevant files, including alternative implementations / factory-switch candidates |
+| Codex missed an entire module / alternative implementation | Codex did not expand scope automatically | Add a `Scope/relevant files: <paths only>` block to the Phase 2 prompt (paths only — no analysis, no review focus). List alternative implementations / factory-switch candidates by file name. See "Phase 2 prompt template". |
 | Phase 5 repeats Phase 2 findings | The two phase prompts were not distinct enough | Phase 2 catches details; Phase 5 checks coherence + regression + hygiene + single-token decision |
 | Codex and Claude disagree on severity | Different priors on the two sides | Mode 2 challenge protocol resolves this; in Mode 1, escalate to Owner |
+| Codex output mirrors my own analysis and catches nothing new | The prompt fed Codex my framing / "review focus" / self-review checklist, killing independent judgment | Use the minimal prompt (see "Prompt minimalism") — diff path + hygiene pointer + output format only |
+| `Auth(TokenRefreshFailed)` appears and I assume Codex is dead | That stderr line is transport-layer noise; the main session usually keeps running | Check whether stdout is still accumulating `exec ... succeeded` lines + whether `~/.codex/sessions/<today>/` has a fresh jsonl before killing. See "Codex progress diagnosis". |
+| Phase 5 verdict is slow → I prematurely write "Codex unavailable" into the PR body → Monitor later fires with the real verdict → PR body has to be rewritten | I rewrote PR body / commit messages before the `--output-last-message` file landed | Do not write any "verdict status" sentence into a persistent artifact (PR body / commit message / code comment) until the Monitor event has fired |
+| ~1/3 of Codex Phase 2 findings refer to code from another already-merged PR | `git diff main...HEAD` used a stale local `main`; the merge-base was computed from an old commit, pulling in unrelated upstream PRs | After `git fetch origin main`, use `git diff origin/main...HEAD`; or `git rebase origin/main` first and then diff |
+| Sub-agent worktree was branched from `main` (stale local) and main moved during the agent's work; on push it has a wall of conflicts | The agent started early, the parent Claude later merged other PRs into main, the agent never re-fetched | The agent prompt must explicitly run `git fetch origin main && git checkout -b <branch> origin/main`; after the agent finishes, the parent Claude proactively rebases + force-with-lease pushes |
+| Multiple client implementations of one interface (e.g. stdlib + SDK) — only the one in the diff was fixed | The Phase 2 prompt did not list all implementation paths in Scope, so Codex's review was constrained to the diff | The Phase 2 Scope block must list alternative implementations like `bfxapi_client.py / bitfinex_client.py`. Keep a project-root list of "interface → multiple implementations" so this is easy to fill in. |
 
 ---
 
@@ -218,7 +280,7 @@ For the full list of use cases and concrete examples, see README: [en](README.md
 - Owner has 100% confidence + the diff is tiny — the workflow has token cost and is not worth it
 - Docs-only changes — Phase 2/5 usually add no value
 
-**Exception (must run the full workflow)**: changes to this protocol's own README / runbook / assets. These are the entry points others use to adopt the workflow, so the "docs-only" exemption **does not apply** — an error here propagates to every adopter. There was one prior incident where this exception was forgotten — protocol's own README/runbook was treated as docs-only-exempt and skipped Phase 2/5. Owner caught the meta-error after the fact and we ran the full workflow retroactively. This rule is the lesson from that incident.
+**Exception (must run the full workflow)**: changes to this protocol's own README / runbook / assets. These are the entry points others use to adopt the workflow, so the "docs-only" exemption **does not apply** — an error here propagates to every adopter. There was one prior incident where this exception was forgotten — the protocol's own README/runbook was treated as docs-only-exempt and skipped Phase 2/5. Owner caught the meta-error after the fact and we ran the full workflow retroactively. This rule is the lesson from that incident.
 
 ---
 
