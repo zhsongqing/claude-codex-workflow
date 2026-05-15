@@ -103,8 +103,11 @@ Doesn't fit → see "When not to use this" below.
 ## Quick Start (5 min)
 
 ```bash
-# 1. Install Codex CLI + login
-npm install -g @openai/codex
+# 1. Install Codex CLI user-local (lets cron / agents self-update without sudo)
+npm config set prefix "$HOME/.local"
+npm install -g @openai/codex@latest
+export PATH="$HOME/.local/bin:$PATH"                       # current shell
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.profile  # future shells
 codex login    # ChatGPT subscription or API key both work
 codex exec "hello"   # verify
 

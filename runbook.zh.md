@@ -15,9 +15,11 @@ Two-LLM 开发协作 protocol。Claude（主对话）+ Codex（CLI）+ Owner（o
   # 一次性 bootstrap（每台机器只做一次）
   npm config set prefix "$HOME/.local"
   npm install -g @openai/codex@latest
-  echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.profile  # 多数 Ubuntu 默认已做，确认一下
-  codex login    # ChatGPT 订阅或 API key 均可
-  codex exec "hello"   # 验通
+  export PATH="$HOME/.local/bin:$PATH"                       # 当前 shell 立刻生效
+  echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.profile  # 之后的 shell；多数 Ubuntu 默认已做
+  command -v codex   # 确认指向 ~/.local/bin/codex 而非系统旧版
+  codex login        # ChatGPT 订阅或 API key 均可
+  codex exec "hello" # 验通
 
   # 后续升级 — 任意 cron / supervisor 可调用，不需要 sudo
   npm install -g @openai/codex@latest
@@ -70,9 +72,11 @@ Phase 1   Claude 实施 + 写测试 + 跑本地测试套件
 Phase 2   Codex pre-PR review (codex exec + git diff against base branch)
           → 输出 finding 表 + PASS / NEEDS_FIXES / BLOCK
 Phase 3   Claude 处理 finding（accept / reject / defer），按需改代码
-          → 提 draft PR，PR body 含 finding accept/reject 表
+          → 本地准备好 PR body（finding accept/reject 表）— 还不开 PR
 Phase 3.5 Claude push 前自查 4 项（详见 §Phase 3 收尾 self-check）
-Phase 4   Claude push + 等 CI 绿 (gh run watch <id> --exit-status)
+          — 任何一项命中就回 Phase 3 改完再走 3.5
+Phase 4   Claude push + 用 `gh pr create --draft` 开 draft PR
+          + 等 CI 绿 (gh run watch <id> --exit-status)
 Phase 5   Codex final review (codex exec, 单 token APPROVE/REJECT
           独立成行 — 后面可跟 1 行 reason 但不参与 gating 解析)
           APPROVE → Claude 标 ready + squash-merge + delete-branch
@@ -112,7 +116,7 @@ Phase 3 改完代码到 Phase 4 push 之间是规则空白。下面 4 条自检�
    命中即修。**注意**：用 `merge-base` 而不是 `origin/main...HEAD`——后者只覆盖已 commit 的 HEAD，看不到你刚改完还没 commit 的代码（也就是你最该自检的那部分）。grep 模式按项目自己的 hygiene 规则补 — 上面那两个匹配 "swallow exception" 和 "logger.debug 吞错"，是典型的 fail-silent 反模式。
    - **典型坑**：新写 helper 用 `except OSError: pass` 三处，Phase 5 R2 直接 reject。一个 grep 命令就能 catch。
 3. **Semantic uplift audit** — 列出 diff 里所有"新加的 `if old_var: ...`" 或 "`state[k] = something_load_bearing`"，**回看 old_var / state[k] 之前是怎么 set 的**，相关 except 路径 / log level 是否仍合适。pre-existing 的 `logger.debug` 在新语义下可能变 load-bearing 但被吞掉。
-   - **典型坑**：加了 `refresh_ok_by_asset[asset] = False` 让 pre-existing `logger.debug("refresh failed ...")` 路径变成新 GC 逻辑的 input；改完没回头看 log level，Phase 5 R3 reject — 如果 refresh 失败被 debug 吞掉，GC 决定基于错误状态。
+   - **典型坑**：加了 `refresh_ok_by_resource[key] = False` 让 pre-existing `logger.debug("refresh failed ...")` 路径变成新 GC 逻辑的 input；改完没回头看 log level，Phase 5 R3 reject — 如果 refresh 失败被 debug 吞掉，GC 决定基于错误状态。
 4. **Mini Phase 5 self-review** — 拿 Phase 5 prompt 对自己 diff 走一遍 mental review，特别看 "我自己看着也别扭" 的位置：variable naming 像不像 production 风格？新加的 try/except 是否能解释 "为什么这里需要 catch"？docstring 是否反映了真实行为？
 
 **ROI 估算**：~15 min self-check 对应可省 ~25 min Codex round（每轮 ~10 min review + ~5 min push/CI/wait）。把 4 轮压到 2 轮就是净 ~25 min/PR。
@@ -166,11 +170,13 @@ Step 3  合并：保留双方共识 + 主动让步 + drop 双方都同意的误�
 
 **并行 Phase 5 的隐性失效（重要）：** 多 PR 并行跑 Phase 5 时，PR A 的 APPROVE 被消费 + merge 后会推动 origin/main，让"还没消费"的 PR B 的 APPROVE 实际上是对**旧 base** 出的判断 — gate 失效。规则：**消费每个 Phase 5 verdict 前，重 fetch origin/main，对比生成 Phase 5 diff 时的 SHA。如果动了，必须 rebase 当前分支 → 重跑测试 → 重新 generate diff → 重跑 Phase 5**，把 verdict 续上。Phase 5 diff 文件命名带 base SHA（例：`/tmp/diff-B-base-04e3d91.diff`）方便比对。
 
-**实战参考：** 一个 session 串行做估计 50 分钟，并行做 22 分钟落地两个 PR — 接近 2× 加速。Codex 抓出 5 条 finding 跨 2 PR，**100% 是自审 + agent 自审都漏的**（包括"两条 client 实现路径只修了一条"+"orphan decider 实测行为与设计意图脱钩"）。这两个 anti-pattern 在 单串行 + 单 self-review 工作流里 100% 会上线。
+**实战参考：** 一个 session 串行做估计 50 分钟，并行做 22 分钟落地两个 PR — 接近 2× 加速。Codex 抓出 5 条 finding 跨 2 PR，**100% 是自审 + agent 自审都漏的**（包括"两条 client 实现路径只修了一条"+"次级清理路径实测行为与设计意图脱钩"）。这两个 anti-pattern 在 单串行 + 单 self-review 工作流里 100% 会上线。
 
 ---
 
 ## Codex CLI 调用模板
+
+> **术语注**：下面的 "Monitor" 和 "task-notification" 是 Claude Code 内置的 background watcher / 事件机制（启动一个长跑命令，stdout 每行触发一次提醒）。如果你不用 Claude Code，等价做法是任意 `until [ -s /tmp/codex-finding.md ]; do sleep 5; done` 这种轮询 + 进程存活检查的 portable shell 循环 — 只要能在"输出落地"或"进程退出"时往下走就行。下文按 Claude Code 的术语写，请按你的工作环境翻译。
 
 ```bash
 # Pre-PR review (Phase 2) / Final review (Phase 5)：
@@ -202,7 +208,7 @@ codex exec --output-last-message /tmp/codex-finding.md - < /tmp/codex-prompt.md 
 | Prompt | 行数 | 输出 |
 |---|---|---|
 | editorialized：context + self-summary + "review focus #1-7" + hygiene 自查清单 | ~150 | transport 中断；零 finding（即便没断也只会 confirm 我的 framing）|
-| **极简：diff 路径 + hygiene 文件指针 + 输出格式** | **~10** | **2 条真 P1**（regime label set 漏校验 + xdist test isolation） |
+| **极简：diff 路径 + hygiene 文件指针 + 输出格式** | **~10** | **2 条真 P1**（状态标签集合漏校验 + 并行 test runner 的 fixture isolation） |
 
 两条都是 self-review 没看到的。这就是独立判断的 ROI。所以 prompt 模板**只允许下面两种最小形态**，谁加 "review focus #N" 谁回去重写。
 

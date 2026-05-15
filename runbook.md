@@ -15,9 +15,11 @@ Put this document in your project's `docs/` directory, or paste it at the start 
   # One-time bootstrap (per machine)
   npm config set prefix "$HOME/.local"
   npm install -g @openai/codex@latest
-  echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.profile  # most Ubuntu setups do this already; verify
-  codex login    # ChatGPT subscription or API key both work
-  codex exec "hello"   # verify
+  export PATH="$HOME/.local/bin:$PATH"                       # this shell, now
+  echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.profile  # future shells; most Ubuntu setups already do this
+  command -v codex   # sanity-check it resolves to ~/.local/bin/codex, not /usr/bin
+  codex login        # ChatGPT subscription or API key both work
+  codex exec "hello" # verify
 
   # Future upgrades — any cron / supervisor can run this, no sudo required
   npm install -g @openai/codex@latest
@@ -70,9 +72,11 @@ Phase 1    Claude implements + writes tests + runs the local test suite
 Phase 2    Codex pre-PR review (codex exec + git diff against base branch)
            → finding table + PASS / NEEDS_FIXES / BLOCK
 Phase 3    Claude handles findings (accept / reject / defer), edits code as needed
-           → opens draft PR; PR body includes finding accept/reject table
+           → prepares the PR body locally (finding accept/reject table) — does NOT open the PR yet
 Phase 3.5  Claude runs 4 self-checks before push (see §Phase 3 closeout self-check)
-Phase 4    Claude pushes + waits for CI green (gh run watch <id> --exit-status)
+           — any hit returns to Phase 3; rerun 3.5 after fixes
+Phase 4    Claude pushes + opens the draft PR with `gh pr create --draft`
+           + waits for CI green (gh run watch <id> --exit-status)
 Phase 5    Codex final review (codex exec, single-token APPROVE/REJECT
            on its own line — an optional second line can carry one reason
            but does not participate in gate parsing)
@@ -113,7 +117,7 @@ The window between "Phase 3 code change complete" and "Phase 4 push" is a rule g
    Fix any hit. **Note**: use `merge-base`, not `origin/main...HEAD` — the latter only covers what's already committed to HEAD, missing the freshly-edited but uncommitted code you most need to self-check. Tune the grep pattern to your project's hygiene rules — the two above match "swallow exception" and "logger.debug eats error", classic fail-silent anti-patterns.
    - **Typical pitfall**: a new helper used `except OSError: pass` three times; Phase 5 R2 rejected on hygiene. One grep catches it.
 3. **Semantic uplift audit** — list every "new `if old_var: ...`" or "`state[k] = something_load_bearing`" in the diff and **re-read how `old_var` / `state[k]` was set before**. Are the related except branches / log levels still appropriate? A pre-existing `logger.debug` can become load-bearing under the new semantics and silently swallow.
-   - **Typical pitfall**: added `refresh_ok_by_asset[asset] = False`, which made a pre-existing `logger.debug("refresh failed ...")` path an input to a new GC routine; never went back to inspect the log level; Phase 5 R3 rejected — if refresh failure gets swallowed at debug, the GC decision runs on wrong state.
+   - **Typical pitfall**: added `refresh_ok_by_resource[key] = False`, which made a pre-existing `logger.debug("refresh failed ...")` path an input to a new GC routine; never went back to inspect the log level; Phase 5 R3 rejected — if refresh failure gets swallowed at debug, the GC decision runs on wrong state.
 4. **Mini Phase 5 self-review** — run the Phase 5 prompt mentally against your own diff. Pay attention to spots that "feel a bit off": does the variable naming look like production code? Can you explain why each new try/except needs to catch what it catches? Does the docstring reflect actual behavior?
 
 **ROI estimate**: ~15 min self-check saves ~25 min of Codex round (each round ~10 min review + ~5 min push/CI/wait). Compressing 4 rounds to 2 is a net ~25 min/PR.
@@ -168,11 +172,13 @@ When a session needs to push multiple independent PRs, stacking three parallelis
 
 **Silent failure mode for parallel Phase 5 (important):** When multiple PRs run Phase 5 in parallel, after PR A's APPROVE is consumed + merged, origin/main advances; any not-yet-consumed APPROVE for PR B is now actually a verdict against the **old base** — the gate is invalidated. Rule: **before consuming each Phase 5 verdict, re-fetch origin/main and compare against the SHA used when Phase 5 diff was generated. If main moved, rebase the current branch → re-run tests → regenerate the diff → re-run Phase 5** to renew the verdict. Naming Phase 5 diff files with the base SHA (e.g. `/tmp/diff-B-base-04e3d91.diff`) makes the comparison easy.
 
-**Real-world result:** one session estimated ~50 min sequential vs ~22 min parallel for two PRs — roughly 2× speedup. Codex caught 5 findings across the 2 PRs, **100% of them missed by both self-review and the agent's self-review** (including "two client implementation paths but only one fixed" + "orphan decider behavior diverged from design intent"). Both anti-patterns would have shipped under a single-serial + single-self-review workflow.
+**Real-world result:** one session estimated ~50 min sequential vs ~22 min parallel for two PRs — roughly 2× speedup. Codex caught 5 findings across the 2 PRs, **100% of them missed by both self-review and the agent's self-review** (including "two client implementation paths but only one fixed" + "secondary cleanup path's actual behavior diverged from design intent"). Both anti-patterns would have shipped under a single-serial + single-self-review workflow.
 
 ---
 
 ## Codex CLI invocation templates
+
+> **Terminology note**: "Monitor" and "task-notification" below are Claude Code's built-in background watcher / event mechanism (start a long-running command; each stdout line emits a notification). If you don't use Claude Code, the portable equivalent is any `until [ -s /tmp/codex-finding.md ]; do sleep 5; done` polling loop plus a process-alive check — anything that moves on when the output file lands or the process exits. The text below uses Claude Code terminology; translate to your environment as needed.
 
 ```bash
 # Pre-PR review (Phase 2) / Final review (Phase 5):
@@ -204,7 +210,7 @@ Empirical: two versions of the same Phase 2 prompt:
 | Prompt | Lines | Output |
 |---|---|---|
 | Editorialized: context + self-summary + "review focus #1-7" + hygiene self-check list | ~150 | Transport interrupted; zero findings (and even without the interruption, it would only have confirmed my framing) |
-| **Minimal: diff path + hygiene doc pointer + output format** | **~10** | **2 real P1s** (missing label-set validation + xdist test isolation) |
+| **Minimal: diff path + hygiene doc pointer + output format** | **~10** | **2 real P1s** (missing state-label-set validation + parallel test runner fixture isolation) |
 
 Both were misses in the 7-item self-review. That's the ROI of independent judgment. So the prompt template **only allows the two minimal shapes below** — anyone adding a "review focus #N" goes back and rewrites.
 
