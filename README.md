@@ -53,7 +53,7 @@ Claude announces which mode to use the moment a trigger word appears in the task
 | 5 | Codex | Final review, single-token APPROVE / REJECT |
 | Merge | Claude | After APPROVE: squash-merge + delete branch + CI auto-deploys |
 
-**Escalation path**: 3 consecutive REJECTs at Phase 5 → escalate to Owner.
+**Escalation path**: Phase 5 REJECT escalation is finding-cost-aware — on the 3rd REJECT, estimate the fix size: < 10 min (typically hygiene / log-level / typo) you continue to round 4 on your own; ≥ 10 min or design-tradeoff territory, escalate to Owner; any 5th REJECT forces escalation. See [runbook §Mode 1](runbook.md) for the full ladder.
 
 ---
 

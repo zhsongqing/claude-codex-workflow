@@ -53,7 +53,7 @@ Claude 在任务入口听到 trigger 词就显式声明走哪种流程，Owner �
 | 5 | Codex | final 评审，单 token APPROVE / REJECT |
 | 合并 | Claude | APPROVE 后 squash 合并 + 删分支 + CI 自动部署 |
 
-**升级路径**：第 5 阶段连续 3 轮 REJECT → 升级 Owner 决定。
+**升级路径**：第 5 阶段 REJECT 时 escalate 阈值是 finding-cost-aware — 第 3 轮 REJECT 评估 fix 工作量，< 10 min（多为 hygiene / log-level / typo）自决继续到第 4 轮，≥ 10 min 或涉及设计权衡升级 Owner；任何第 5 轮 REJECT 强制 escalate。详见 [runbook §Mode 1](runbook.md)。
 
 ---
 
