@@ -53,7 +53,7 @@ Claude 在任务入口听到 trigger 词就显式声明走哪种流程，Owner �
 | 5 | Codex | final 评审，单 token APPROVE / REJECT |
 | 合并 | Claude | APPROVE 后 squash 合并 + 删分支 + CI 自动部署 |
 
-**升级路径**：第 5 阶段连续 3 轮 REJECT → 升级 Owner 决定。
+**升级路径**：第 5 阶段 REJECT 时 escalate 阈值是 finding-cost-aware — 第 3 轮 REJECT 评估 fix 工作量，< 10 min（多为 hygiene / log-level / typo）自决继续到第 4 轮，≥ 10 min 或涉及设计权衡升级 Owner；任何第 5 轮 REJECT 强制 escalate。详见 [runbook §Mode 1](runbook.zh.md)。
 
 ---
 
@@ -103,18 +103,21 @@ Step 3  合并去重，drop 双方共识的误报，无法收敛的升级 Owner
 ## Quick Start（5 分钟）
 
 ```bash
-# 1. 安装 Codex CLI 并登录
-npm install -g @openai/codex
+# 1. 装 Codex CLI 到 user-local（让 cron / agent 后续 no-sudo 自更新）
+npm config set prefix "$HOME/.local"
+npm install -g @openai/codex@latest
+export PATH="$HOME/.local/bin:$PATH"                       # 当前 shell
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.profile  # 之后的 shell
 codex login    # ChatGPT 或 API key 都行
 codex exec "hello"   # 验通
 
-# 2. 安装 GitHub CLI 并 auth
+# 2. 装 GitHub CLI 并 auth
 brew install gh
 gh auth login
 
 # 3. 项目里要有 CI workflow（任何能在 PR 上跑测试的都行）
 
-# 4. 把 runbook.md 放进项目
+# 4. 把 runbook.zh.md 放进项目
 #    或在新会话开头粘给 Claude
 ```
 
@@ -128,7 +131,7 @@ gh auth login
 
 详细 protocol、prompt 模板、踩坑列表、prod-critical 黑名单：
 
-→ **[runbook.md](runbook.md)**
+→ **[runbook.zh.md](runbook.zh.md)**
 
 ---
 
@@ -145,4 +148,4 @@ gh auth login
 
 ## 反馈
 
-踩到新坑 / 觉得 protocol 该调整 → 改 [runbook.md](runbook.md) 的"踩过的坑" / "演进规则"章节，提 PR。
+踩到新坑 / 觉得 protocol 该调整 → 改 [runbook.zh.md](runbook.zh.md) 的"踩过的坑" / "演进规则"章节，提 PR。
